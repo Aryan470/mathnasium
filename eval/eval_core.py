@@ -67,30 +67,164 @@ class LeanSession:
     def __init__(self):
         self.available = False
         self.env = None
+        self.leandojo = None
+        self._dojo_ctx = None
+        self._dojo = None
+        self._state = None
+        self._problem: Optional[Problem] = None
+        self.last_error: Optional[str] = None
         try:
-            import leandojo  # type: ignore
+            import lean_dojo  # type: ignore[import]
+            self.leandojo = lean_dojo
+            # Cache commonly used classes/functions for convenience.
+            self._LeanGitRepo = lean_dojo.LeanGitRepo
+            self._Theorem = lean_dojo.Theorem
+            self._Dojo = lean_dojo.Dojo
+            self._TacticState = lean_dojo.TacticState
+            self._ProofFinished = lean_dojo.ProofFinished
+            self._ProofGivenUp = lean_dojo.ProofGivenUp
+            self._LeanError = lean_dojo.LeanError
             self.available = True
-            self.leandojo = leandojo
+        except Exception as exc:  # pragma: no cover - best effort handling
+            self.last_error = str(exc)
+
+    # ------------------------------------------------------------------ #
+    # lifecycle helpers
+    def close(self) -> None:
+        """Close any active Dojo context."""
+        if self._dojo_ctx is not None:
+            try:
+                self._dojo_ctx.__exit__(None, None, None)
+            finally:
+                self._dojo_ctx = None
+                self._dojo = None
+                self._state = None
+                self._problem = None
+
+    def __del__(self) -> None:  # pragma: no cover - cleanup on GC
+        try:
+            self.close()
         except Exception:
-            self.available = False
-            self.leandojo = None
+            pass
 
     def reset(self, problem: Problem) -> Dict[str, Any]:
         """Initialize Lean state for a problem. Returns an initial proof_state dict."""
         if not self.available:
-            return {"ok": False, "reason": "LeanDojo not available", "goals": None}
-        # TODO: integrate with LeanDojo's APIs: checkout commit, open file, position at problem.start, etc.
-        return {"ok": True, "goals": ["<goal>"], "cursor": problem.start}
+            return {
+                "ok": False,
+                "reason": self.last_error or "LeanDojo not available",
+                "goals": None,
+            }
+
+        # Ensure previous sessions are cleaned up before starting a new one.
+        self.close()
+        self._problem = problem
+
+        try:
+            repo = self._LeanGitRepo(problem.url, problem.commit)
+            theorem = self._Theorem(repo, problem.file_path, problem.full_name)
+            dojo_ctx = self._Dojo(theorem)
+            dojo, state = dojo_ctx.__enter__()
+        except Exception as exc:
+            self.last_error = str(exc)
+            self.close()
+            return {
+                "ok": False,
+                "reason": self.last_error,
+                "goals": None,
+            }
+
+        self._dojo_ctx = dojo_ctx
+        self._dojo = dojo
+        self._state = state
+        goals = self._format_goals(state)
+        return {"ok": True, "goals": goals, "cursor": problem.start}
 
     def apply_tactic(self, tactic: str) -> Dict[str, Any]:
         """Apply a tactic. Returns a dict with new state or error."""
         if not self.available:
             return {"ok": False, "error": "lean_not_available"}
-        # TODO: call LeanDojo to apply the tactic and fetch next goals.
-        # For now: pretend 'admit'/'exact'/'done' closes all goals.
-        if "admit" in tactic or "exact" in tactic or "done" in tactic:
-            return {"ok": True, "goals": []}
-        return {"ok": True, "goals": ["<goal>"]}
+        if self._dojo is None or self._state is None:
+            return {"ok": False, "error": "session_not_initialized"}
+
+        try:
+            result = self._dojo.run_tac(self._state, tactic)
+        except Exception as exc:
+            self.last_error = str(exc)
+            return {"ok": False, "error": self.last_error}
+
+        # Handle LeanDojo result types.
+        if isinstance(result, self._LeanError):
+            self.last_error = result.error
+            return {"ok": False, "error": result.error}
+
+        if isinstance(result, self._ProofGivenUp):
+            self.last_error = "proof_given_up"
+            self._state = None
+            return {"ok": False, "error": "proof_given_up"}
+
+        if isinstance(result, self._ProofFinished):
+            self._state = None
+            return {"ok": True, "goals": [], "finished": True}
+
+        if isinstance(result, self._TacticState):
+            self._state = result
+            goals = self._format_goals(result)
+            return {"ok": True, "goals": goals}
+
+        # Fallback: unknown result type, attempt to stringify and continue.
+        self._state = result  # keep reference for potential debugging
+        display = getattr(result, "pp", None)
+        if callable(display):
+            try:
+                display = display()
+            except Exception:  # pragma: no cover
+                display = None
+        goals = [display] if isinstance(display, str) and display else []
+        return {"ok": True, "goals": goals}
+
+    # ------------------------------------------------------------------ #
+    # internal helpers
+    def _format_goals(self, state: Any) -> List[str]:
+        """Convert a LeanDojo tactic state into a list of human-readable goals."""
+        if state is None:
+            return []
+        goals: List[str] = []
+
+        # Prefer an explicit goals list when available.
+        raw_goals = getattr(state, "goals", None)
+        if raw_goals:
+            for g in raw_goals:
+                text = getattr(g, "pp", None)
+                if callable(text):
+                    try:
+                        text = text()
+                    except Exception:  # pragma: no cover
+                        text = None
+                if isinstance(text, str) and text.strip():
+                    goals.append(text)
+                else:
+                    goals.append(str(g))
+
+        if goals:
+            return goals
+
+        # Fall back to pretty-printed state.
+        text = getattr(state, "pp", None)
+        if callable(text):
+            try:
+                text = text()
+            except Exception:  # pragma: no cover
+                text = None
+        if isinstance(text, str) and text.strip():
+            return [text]
+        return []
+
+    def is_successful(self) -> Optional[bool]:
+        """Return LeanDojo's success flag if a session is active."""
+        if self._dojo is None:
+            return None
+        return getattr(self._dojo, "is_successful", None)
 
 # -------- Prompt building --------
 class PromptBuilder:
@@ -144,27 +278,70 @@ class ProofEvaluator:
     def run_attempt(self, problem: Problem) -> AttemptResult:
         t0 = time.time()
         proof_script: List[str] = []
+        meta: Dict[str, Any] = {}
         try:
             state = self.lean.reset(problem)
             if not state.get("ok"):
-                return AttemptResult(problem, "skipped", 0, time.time()-t0, [], state.get("reason"))
+                meta["reset_error"] = state.get("reason")
+                meta["lean_success"] = self.lean.is_successful()
+                return AttemptResult(
+                    problem,
+                    "skipped",
+                    0,
+                    time.time() - t0,
+                    proof_script,
+                    state.get("reason"),
+                    meta,
+                )
             goals = state.get("goals") or []
             steps = 0
             while goals and steps < self.max_steps:
                 prompt = self.prompt_builder.build(problem, goals)
                 tactic = self.model.generate(prompt, **self.gen_kwargs).strip()
+                print(f"Prompt: {prompt}")
+                print(f"Tactic: {tactic}")
                 proof_script.append(tactic)
                 res = self.lean.apply_tactic(tactic)
                 if not res.get("ok"):
-                    return AttemptResult(problem, "fail", steps+1, time.time()-t0, proof_script, res.get("error"))
+                    meta["lean_error"] = res.get("error")
+                    meta["lean_success"] = self.lean.is_successful()
+                    return AttemptResult(
+                        problem,
+                        "fail",
+                        steps + 1,
+                        time.time() - t0,
+                        proof_script,
+                        res.get("error"),
+                        meta,
+                    )
                 goals = res.get("goals") or []
                 steps += 1
                 if self.sleep_between:
                     time.sleep(self.sleep_between)
             status = "success" if not goals else "timeout"
-            return AttemptResult(problem, status, steps, time.time()-t0, proof_script)
+            meta["lean_success"] = self.lean.is_successful()
+            return AttemptResult(
+                problem,
+                status,
+                steps,
+                time.time() - t0,
+                proof_script,
+                meta=meta,
+            )
         except Exception as e:
-            return AttemptResult(problem, "error", len(proof_script), time.time()-t0, proof_script, error=str(e))
+            meta["exception_type"] = type(e).__name__
+            meta["lean_success"] = self.lean.is_successful()
+            return AttemptResult(
+                problem,
+                "error",
+                len(proof_script),
+                time.time() - t0,
+                proof_script,
+                error=str(e),
+                meta=meta,
+            )
+        finally:
+            self.lean.close()
 
     def run(self, problems: Iterable[Problem]) -> List[AttemptResult]:
         results: List[AttemptResult] = []

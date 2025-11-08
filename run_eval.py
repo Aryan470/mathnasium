@@ -24,9 +24,12 @@ def main():
     ap.add_argument("--model-arg", action="append", help="Model constructor arg as key=value (JSON allowed)")
     ap.add_argument("--max-steps", type=int, default=64, help="Max tactic steps per problem")
     ap.add_argument("--sleep-between", type=float, default=0.0, help="Sleep seconds between model calls")
+    ap.add_argument("--num-problems", type=int, default=None, help="Number of problems to evaluate")
     args = ap.parse_args()
 
     problems = ProblemLoader(args.test_path).load()
+    if args.num_problems is not None:
+        problems = problems[:args.num_problems]
     model_kwargs = parse_kv_pairs(args.model_arg)
     model = load_model(args.model, **model_kwargs)
     evaluator = ProofEvaluator(model, lean=LeanSession(), prompt_builder=PromptBuilder(),
