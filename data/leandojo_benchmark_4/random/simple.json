@@ -1,0 +1,1 @@
+{"url": "https://github.com/leanprover-community/mathlib4", "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5", "file_path": "Mathlib/Init/Algebra/Classes.lean", "full_name": "trichotomous_of", "start": [364, 1], "end": [365, 15], "traced_tactics": []}

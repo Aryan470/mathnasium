@@ -1,2 +1,3 @@
-leandojo_benchmark_4/
+data/leandojo_benchmark_4/**
 results.jsonl
+!data/leandojo_benchmark_4/random/simple.json
