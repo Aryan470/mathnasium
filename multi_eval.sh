@@ -1,0 +1,5 @@
+# 
+python3 run_eval.py --test-path data/leandojo_benchmark_4/random/val.json --num-problems 3 --batch-size 5 --max-workers 1  --out-path results/our_base_model_batched.jsonl --model eval.models:QwenModel > results/base_batched_logs.txt 2>&1 &
+python3 run_eval.py --test-path data/leandojo_benchmark_4/random/val.json --num-problems 3 --batch-size 5 --max-workers 1  --out-path results/our_sft_model_batched.jsonl --model eval.models:FineTunedQwenModel > results/sft_batched_logs.txt 2>&1 &
+python3 run_eval.py --test-path data/leandojo_benchmark_4/random/val.json --num-problems 3 --batch-size 5 --max-workers 1  --out-path results/our_grpo_model_batched.jsonl --model eval.models:GRPOQwenModel > results/grpo_batched_logs.txt 2>&1
+# python3 run_eval.py --test-path data/leandojo_benchmark_4/random/val.json --num-problems 250 --batch-size 1 --max-workers 10 --out-path results/base_model.jsonl --model eval.models:QwenModel 

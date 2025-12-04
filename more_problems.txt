@@ -1,0 +1,57 @@
+
+================================================================================
+EVALUATION SUMMARY
+================================================================================
+Total Problems: 250
+Total Attempts: 250
+
+Problem-Level Statistics:
+  Problems Solved: 28 (11.20%)
+  Problems Failed: 221
+  Problems Skipped: 1
+
+Attempt-Level Statistics:
+  Attempts Successful: 28 (11.20%)
+  Average Steps per Attempt: 1.54
+
+Timing Statistics:
+  Total Time: 5562.51 seconds (92.71 minutes)
+  Average Time per Attempt: 22.25 seconds
+  Average Time per Problem: 22.25 seconds
+
+Status Breakdown:
+  fail: 221
+  skipped: 1
+  success: 28
+================================================================================
+
+Results written to: results/our_model.jsonl
+Summary written to: results/our_model_summary.json
+
+================================================================================
+EVALUATION SUMMARY
+================================================================================
+Total Problems: 250
+Total Attempts: 250
+
+Problem-Level Statistics:
+  Problems Solved: 0 (0.00%)
+  Problems Failed: 249
+  Problems Skipped: 1
+
+Attempt-Level Statistics:
+  Attempts Successful: 0 (0.00%)
+  Average Steps per Attempt: 0.63
+
+Timing Statistics:
+  Total Time: 9604.67 seconds (160.08 minutes)
+  Average Time per Attempt: 38.42 seconds
+  Average Time per Problem: 38.42 seconds
+
+Status Breakdown:
+  fail: 249
+  skipped: 1
+================================================================================
+
+Results written to: results/base_model.jsonl
+Summary written to: results/base_model_summary.json

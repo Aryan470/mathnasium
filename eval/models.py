@@ -12,6 +12,30 @@ class MockModel(BaseModelInterface):
         # Naive behavior: try to "finish" quickly
         return "admit"
 
+
+def generate_with_tps(
+    model,
+    tokenizer,
+    prompt: str,
+    max_new: int,
+    temp: float,
+    top_p: float,
+):
+    """
+    Single-prompt wrapper around generate_batch_with_tps so QwenModel/FineTunedQwenModel
+    can keep their existing generate() signature.
+    """
+    batch_results = generate_batch_with_tps(
+        model,
+        tokenizer,
+        [prompt],   # single prompt as a batch of size 1
+        max_new,
+        temp,
+        top_p,
+    )
+    # generate_batch_with_tps returns e.g. [(reply, gen_len), ...]
+    reply, gen_len = batch_results[0]
+    return reply, gen_len
     
 class QwenModel(BaseModelInterface):
     def __init__(
